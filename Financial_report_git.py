@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-api_key = os.getenv('api_key')
+api_key = 'sk-proj-PyFYk97EZrwolUu9dETCT3BlbkFJewRKHPY9CrAD58O5zkJ9'
 
 def get_ticker_for_company(company_name):
     prompt = f"provide (ONLY!) the ticker for Yahoo Finance for the company, if user provides ticker use it: {company_name}"
