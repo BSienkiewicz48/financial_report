@@ -20,8 +20,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
-api_key = os.getenv('api_key')
+api_key = st.secrets["API_KEY"]
 
 def get_ticker_for_company(company_name):
     prompt = f"provide (ONLY!) the ticker for Yahoo Finance for the company, if user provides ticker use it: {company_name}"
