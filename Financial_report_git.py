@@ -327,6 +327,17 @@ def summarize_news(df_streszczenia_to_AI):
     summary_news = response.choices[0].message.content.strip()
     return summary_news
 
+
+def safe_calculate(func, *args):
+    try:
+        result = func(*args)
+        if pd.isna(result):
+            return None
+        return result
+    except (TypeError, ZeroDivisionError, KeyError):
+        return None
+
+
 st.title('Raport inwestycyjny')
 
 company_name = st.text_input("Wprowadź nazwę firmy", "")
@@ -343,18 +354,16 @@ if st.button('Wygeneruj raport'):
             company_name = stock.info.get('longName')
 
             if not company_name:
-                st.error("Incorrect ticker: "+ ticker + " or yahoo finance error")
-
+                st.error(f"Incorrect ticker: {ticker} or Yahoo Finance error")
             else:
-
+                # Rekomendacje analityków
                 recommendations = stock.recommendations
-                name_ticker = (company_name + " " + ticker)
+                name_ticker = f"{company_name} {ticker}"
 
                 if recommendations is None or recommendations.empty:
                     st.warning("Brak rekomendacji analityków dla tej firmy.")
                 else:
                     recommendations = recommendations.reset_index().set_index('period')
-
                     recommendations.drop(columns=['index'], inplace=True)
                     
                     recommendations = recommendations.loc[~(recommendations[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']] == 0).all(axis=1)]
@@ -366,34 +375,36 @@ if st.button('Wygeneruj raport'):
                     currency_name = info.get('currency')
 
                     recommendations = recommendations.rename(columns={
-                        'period': 'Okres',
                         'strongBuy': 'Silne rekom. kupna',
                         'buy': 'Rekom. kupna',
                         'hold': 'Rekom. trzymaj',
                         'sell': 'Rekom. sprzedaży',
-                        'strongSell': 'Silne rekom. sprzedaży'})
+                        'strongSell': 'Silne rekom. sprzedaży'
+                    })
                     
                     total_recommendations = recommendations[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']].sum(axis=1)
 
                     recommendations_percentage = recommendations.copy()
+                    recommendations_percentage[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']] = \
+                        (recommendations[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']].div(total_recommendations, axis=0)) * 100
 
                     recommendations_percentage[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']] = \
-                    (recommendations[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']].div(total_recommendations, axis=0)) * 100
-
-                    recommendations_percentage[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']] = \
-                    recommendations_percentage[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']].round(0).astype(int)
+                        recommendations_percentage[['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']].round(0).astype(int)
+                    
                     st.markdown("Tabela poniżej przedstawia procentowy udział poszczególnych rekomendacji w łącznej liczbie rekomendacji:")
-
+                    
                     for column in ['Silne rekom. kupna', 'Rekom. kupna', 'Rekom. trzymaj', 'Rekom. sprzedaży', 'Silne rekom. sprzedaży']:
                         recommendations_percentage[column] = recommendations_percentage[column].astype(str) + '%'
+                    
                     st.dataframe(recommendations_percentage)
+                    
                     with st.expander("Rozwiń, aby zobaczyć tabelę z liczbą poszczególnych rekomendacji"):
                         st.dataframe(recommendations)
-
+                
                 summary = summarize_recommendations(recommendations_percentage)
-
                 st.markdown(summary)
 
+                # Dywidendy
                 dividends = stock.dividends
 
                 results = []
@@ -401,10 +412,8 @@ if st.button('Wygeneruj raport'):
                 for date, dividend in dividends.items():
                     history = stock.history(start=date, end=date + pd.Timedelta(days=1))
                     if not history.empty:
-                        close_price = history['Close'].iloc[0]  
-                        
+                        close_price = history['Close'].iloc[0]
                         dividend_yield = (dividend / close_price) * 100
-                        
                         results.append({
                             "Date": date,
                             "Dividend": dividend,
@@ -416,20 +425,17 @@ if st.button('Wygeneruj raport'):
 
                 history_df = stock.history(period="max")[['Open', 'Close']].reset_index()
                 history_df_close_only = history_df[['Date', 'Close']]
-                history_df_close_only.loc[:, 'Date'] = pd.to_datetime(history_df['Date'])
+                history_df_close_only['Date'] = pd.to_datetime(history_df['Date']).dt.date
                 history_df_close_only.set_index('Date', inplace=True)
-                history_df_close_only.index = history_df_close_only.index.date
 
+                # Finanse roczne i kwartalne
                 annual_financials = stock.financials.T.sort_index(ascending=False)
                 annual_balance_sheet = stock.balance_sheet.T.sort_index(ascending=False)
-
                 quarterly_financials = stock.quarterly_financials.T.sort_index(ascending=False)
-
                 quarterly_balance_sheet = stock.quarterly_balance_sheet.T.sort_index(ascending=False)
 
                 latest_annual_financial_date = annual_financials.index[0]
                 latest_quarterly_financial_date = quarterly_financials.index[0]
-
                 latest_annual_balance_date = annual_balance_sheet.index[0]
                 latest_quarterly_balance_date = quarterly_balance_sheet.index[0]
 
@@ -447,9 +453,18 @@ if st.button('Wygeneruj raport'):
                 else:
                     latest_balance_sheet = annual_balance_sheet
 
-                
                 latest_balance_sheet_2 = latest_balance_sheet
-                latest_financials_2=latest_financials
+                latest_financials_2 = latest_financials
+
+                # Funkcja do bezpiecznego obliczania
+                def safe_calculate(func, *args):
+                    try:
+                        result = func(*args)
+                        if pd.isna(result):
+                            return None
+                        return result
+                    except (TypeError, ZeroDivisionError, KeyError):
+                        return None
 
                 results = []
                 for date in latest_financials.index:
@@ -462,22 +477,25 @@ if st.button('Wygeneruj raport'):
                     total_liabilities = latest_balance_sheet_row.get('Total Liabilities Net Minority Interest')
                     total_equity = latest_balance_sheet_row.get('Total Equity Gross Minority Interest')
                     
-                    current_ratio = current_assets / current_liabilities if current_assets and current_liabilities else None
-                    quick_ratio = (current_assets - inventory) / current_liabilities if current_assets and inventory and current_liabilities else None
-                    debt_to_equity_ratio = total_liabilities / total_equity if total_liabilities and total_equity else None
+                    # Obliczenia wskaźników z obsługą błędów
+                    current_ratio = safe_calculate(lambda x, y: x / y, current_assets, current_liabilities)
+                    quick_ratio = safe_calculate(lambda x, y, z: (x - y) / z, current_assets, inventory, current_liabilities)
+                    debt_to_equity_ratio = safe_calculate(lambda x, y: x / y, total_liabilities, total_equity)
                     
                     total_revenue = latest_financials_row.get('Total Revenue')
                     cost_of_revenue = latest_financials_row.get('Cost Of Revenue')
-                    gross_margin = total_revenue - cost_of_revenue if total_revenue and cost_of_revenue else None
-                    gross_margin_ratio = (gross_margin / total_revenue * 100) if gross_margin and total_revenue else None
+                    gross_margin = safe_calculate(lambda x, y: x - y, total_revenue, cost_of_revenue)
+                    gross_margin_ratio = safe_calculate(lambda x, y: (x / y) * 100, gross_margin, total_revenue)
+                    
                     ebit = latest_financials_row.get('EBIT')
-                    operating_margin = (ebit / total_revenue * 100) if ebit and total_revenue else None
+                    operating_margin = safe_calculate(lambda x, y: (x / y) * 100, ebit, total_revenue)
+                    
                     net_income = latest_financials_row.get('Net Income')
-                    net_profit_margin = (net_income / total_revenue * 100) if net_income and total_revenue else None
+                    net_profit_margin = safe_calculate(lambda x, y: (x / y) * 100, net_income, total_revenue)
                     
                     total_assets = latest_balance_sheet_row.get('Total Assets')
-                    return_on_assets = (net_income / total_assets * 100) if net_income and total_assets else None
-                    return_on_equity = (net_income / total_equity * 100) if net_income and total_equity else None
+                    return_on_assets = safe_calculate(lambda x, y: (x / y) * 100, net_income, total_assets)
+                    return_on_equity = safe_calculate(lambda x, y: (x / y) * 100, net_income, total_equity)
                     
                     results.append({
                         "Date": date.strftime("%Y-%m-%d"),
@@ -491,55 +509,54 @@ if st.button('Wygeneruj raport'):
                         "Return on Equity (ROE) (%)": return_on_equity
                     })
 
-                    financial_metrics = ['Total Revenue', 'Total Revenue (Annualized)', 'EBIT', 'EBIT (Annualized)', 'Net Income', 'Net Income (Annualized)']
-                    balance_sheet_metrics = ['Total Assets', 'Total Liabilities Net Minority Interest', 'Total Equity Gross Minority Interest']
+                financial_metrics = ['Total Revenue', 'Total Revenue (Annualized)', 'EBIT', 'EBIT (Annualized)', 'Net Income', 'Net Income (Annualized)']
+                balance_sheet_metrics = ['Total Assets', 'Total Liabilities Net Minority Interest', 'Total Equity Gross Minority Interest']
 
-                    data_fin = []
+                data_fin = []
 
-                    for date in latest_financials.index:
-                        row = {'Date': date.strftime("%d.%m.%Y")}
-                        financials_row = latest_financials.loc[date]
-                        balance_sheet_row = latest_balance_sheet.loc[date]
-                        
-                        for metric in financial_metrics:
-                            if metric in financials_row:
-                                row[metric] = financials_row[metric]
-                        
-                        for metric in balance_sheet_metrics:
-                            if metric in balance_sheet_row:
-                                row[metric] = balance_sheet_row[metric]
-                        
-                        data_fin.append(row)
+                for date in latest_financials.index:
+                    row = {'Date': date.strftime("%d.%m.%Y")}
+                    financials_row = latest_financials.loc[date]
+                    balance_sheet_row = latest_balance_sheet.loc[date]
+                    
+                    for metric in financial_metrics:
+                        if metric in financials_row:
+                            row[metric] = financials_row[metric]
+                    
+                    for metric in balance_sheet_metrics:
+                        if metric in balance_sheet_row:
+                            row[metric] = balance_sheet_row[metric]
+                    
+                    data_fin.append(row)
 
+                basic_fin = pd.DataFrame(data_fin)
+                basic_fin = basic_fin.dropna(how='all')
+                basic_fin = basic_fin.loc[~(basic_fin.isna().all(axis=1))]
+                basic_fin.set_index('Date', inplace=True)
 
-                    basic_fin = pd.DataFrame(data_fin)
-                    basic_fin = basic_fin.dropna(how='all')
-                    basic_fin = basic_fin.loc[~(basic_fin.isna().all(axis=1))]
-                    basic_fin.set_index('Date', inplace=True)
+                column_mapping = {
+                    'Total Revenue': 'Przychody Ogółem',
+                    'EBIT': 'EBIT',
+                    'Net Income': 'Zysk Netto',
+                    'Total Assets': 'Aktywa Ogółem',
+                    'Total Liabilities Net Minority Interest': 'Zobowiązania Ogółem',
+                    'Total Equity Gross Minority Interest': 'Kapitał Własny',
+                    'Total Revenue (Annualized)': 'Przychody Ogółem (Urocznione)',
+                    'EBIT (Annualized)': 'EBIT (Urocznione)',
+                    'Net Income (Annualized)': 'Zysk Netto (Uroczniony)'
+                }
 
-                    column_mapping = {
-                        'Total Revenue': 'Przychody Ogółem',
-                        'EBIT': 'EBIT',
-                        'Net Income': 'Zysk Netto',
-                        'Total Assets': 'Aktywa Ogółem',
-                        'Total Liabilities Net Minority Interest': 'Zobowiązania Ogółem',
-                        'Total Equity Gross Minority Interest': 'Kapitał Własny',
-                        'Total Revenue (Annualized)': 'Przychody Ogółem (Urocznione)',
-                        'EBIT (Annualized)': 'EBIT (Urocznione)',
-                        'Net Income (Annualized)': 'Zysk Netto (Uroczniony)'
-                    }
+                basic_fin.rename(columns=column_mapping, inplace=True)
 
-                    basic_fin.rename(columns=column_mapping, inplace=True)
+                def format_number(x):
+                    if pd.isna(x):
+                        return ''
+                    elif isinstance(x, (int, float)):
+                        return f'{x:,.0f}'.replace(',', ' ')
+                    else:
+                        return x
 
-                    def format_number(x):
-                        if pd.isna(x):
-                            return ''
-                        elif isinstance(x, (int, float)):
-                            return f'{x:,.0f}'.replace(',', ' ')
-                        else:
-                            return x
-
-                    basic_fin = basic_fin.map(format_number)
+                basic_fin = basic_fin.map(format_number)
 
                 basic_fin.dropna(how='all', subset=basic_fin.columns.difference(['Date']), inplace=True)
                 basic_fin.fillna(0, inplace=True)
@@ -549,7 +566,6 @@ if st.button('Wygeneruj raport'):
                 basic_fin = basic_fin.sort_index(ascending=False)
 
                 basic_fin_1 = basic_fin.apply(pd.to_numeric, errors='coerce')
-
                 basic_fin.index = pd.to_datetime(basic_fin.index, format='%d.%m.%Y')
                 basic_fin = basic_fin.sort_index(ascending=False)
 
@@ -561,9 +577,11 @@ if st.button('Wygeneruj raport'):
                 for col in percent_changes.columns:
                     previous_values = basic_fin_1[col].shift(-1)
                     current_values = basic_fin_1[col]
-                    percent_changes[col] = np.where((previous_values < 0) & (current_values > 0),
-                                                    (current_values - previous_values) / abs(previous_values) * 100,
-                                                    percent_changes[col])
+                    percent_changes[col] = np.where(
+                        (previous_values < 0) & (current_values > 0),
+                        (current_values - previous_values) / abs(previous_values) * 100,
+                        percent_changes[col]
+                    )
 
                 percent_changes = percent_changes.round(0)
                 percent_changes = percent_changes.dropna()
@@ -584,7 +602,8 @@ if st.button('Wygeneruj raport'):
                     'Operating Margin (%)': 'Marża operacyjna %',
                     'Net Profit Margin (%)': 'Marża zysku netto %',
                     'Return on Assets (ROA) (%)': 'Zwrot z aktywów (ROA) %',
-                    'Return on Equity (ROE) (%)': 'Zwrot z kap. własnego (ROE) %'})
+                    'Return on Equity (ROE) (%)': 'Zwrot z kap. własnego (ROE) %'
+                })
                 
                 summary_ind = summarize_indicators(indicators_df)
                 summary_fin = summarize_financials_with_percent_changes(percent_changes, basic_fin, company_name)
@@ -614,14 +633,14 @@ if st.button('Wygeneruj raport'):
                     
                     market_cap = stock_price * shares if stock_price and shares else None
 
-                    pe_ratio = market_cap / net_income if market_cap and net_income else None
-                    book_value_per_share = total_equity / shares if shares else None
-                    pb_ratio = market_cap / (book_value_per_share * shares) if market_cap and shares else None
-                    roe = net_income / total_equity if total_equity else None
-                    roa = net_income / total_assets if total_assets else None
-                    de_ratio = total_debt / total_equity if total_equity else None
-                    ev = market_cap + total_debt - latest_balance_sheet_2.at[date, 'Cash Cash Equivalents And Short Term Investments'] if market_cap else None
-                    ev_to_ebitda = ev / ebitda if ev and ebitda else None
+                    pe_ratio = safe_calculate(lambda x, y: x / y, market_cap, net_income)
+                    book_value_per_share = safe_calculate(lambda x, y: x / y, total_equity, shares)
+                    pb_ratio = safe_calculate(lambda x, y: x / y, market_cap, (book_value_per_share * shares)) if book_value_per_share else None
+                    roe = safe_calculate(lambda x, y: x / y, net_income, total_equity)
+                    roa = safe_calculate(lambda x, y: x / y, net_income, total_assets)
+                    de_ratio = safe_calculate(lambda x, y: x / y, total_debt, total_equity)
+                    ev = safe_calculate(lambda x, y, z: x + y - z, market_cap, total_debt, latest_balance_sheet_2.at[date, 'Cash Cash Equivalents And Short Term Investments']) if market_cap else None
+                    ev_to_ebitda = safe_calculate(lambda x, y: x / y, ev, ebitda)
 
                     indicators.append({
                         'Date': date,
@@ -644,64 +663,63 @@ if st.button('Wygeneruj raport'):
                 AI_indicators_df['P/E Ratio'] = AI_indicators_df['P/E Ratio'].apply(lambda x: "Zysk poniżej zera" if x < 0 else x)
                 AI_indicators_df['EV/EBITDA'] = AI_indicators_df['EV/EBITDA'].apply(lambda x: "Zysk poniżej zera" if x < 0 else x)
 
-                indicators_2_df['P/E Ratio'] = indicators_2_df['P/E Ratio'].apply(lambda x: np.nan if x < 0 else x)
-                indicators_2_df['EV/EBITDA'] = indicators_2_df['EV/EBITDA'].apply(lambda x: np.nan if x < 0 else x)
+                indicators_2_df['P/E Ratio'] = indicators_2_df['P/E Ratio'].apply(lambda x: np.nan if isinstance(x, (int, float)) and x < 0 else x)
+                indicators_2_df['EV/EBITDA'] = indicators_2_df['EV/EBITDA'].apply(lambda x: np.nan if isinstance(x, (int, float)) and x < 0 else x)
                 indicators_2_df['Date'] = pd.to_datetime(indicators_2_df['Date'])
                 indicators_2_df['Date'] = indicators_2_df['Date'].dt.strftime('%Y/%m')
                 indicators_2_df.set_index('Date', inplace=True)
                 indicators_2_df.sort_index(ascending=True, inplace=True)
 
+                # Tworzenie wykresów
                 fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 16))
-
                 axes = axes.flatten()
 
                 columns = ['P/E Ratio', 'P/B Ratio', 'ROE', 'ROA', 'EV/EBITDA', 'EPS']
-
                 colors = plt.cm.viridis(np.linspace(0, 1, len(columns)))
 
-                
                 for ax, column, color in zip(axes, columns, colors):
                     bars = indicators_2_df[column].plot(kind='bar', ax=ax, color=color)
                     ax.set_title(column)
                     ax.set_xticklabels(indicators_2_df.index, rotation=45, ha='right')  
                     
-                   
                     for bar in bars.patches:
-                        ax.text(
-                            bar.get_x() + bar.get_width() / 2,
-                            bar.get_height(),
-                            round(bar.get_height(), 2),
-                            ha='center', va='bottom'
-                        )
+                        height = bar.get_height()
+                        if not pd.isna(height):
+                            ax.text(
+                                bar.get_x() + bar.get_width() / 2,
+                                height,
+                                f'{height:.2f}',
+                                ha='center', va='bottom'
+                            )
 
-                
                 plt.tight_layout()
 
                 summary_stock_indc = summarize_market_indicators(AI_indicators_df)
 
+                # Podstawowe dane finansowe
                 st.subheader('Podstawowe dane finansowe')
                 st.markdown(f"Poniższa tabela zawiera podstawowe dane finansowe {company_name}, dane międzyokresowe są urocznione w celu zapewnienia porównywalności do danych rocznych. Dane finansowe są przedstawione w walucie ***{currency_name}***")
-
+                
                 basic_fin.index = basic_fin.index.strftime('%Y/%m')
                 st.dataframe(basic_fin)
                 st.markdown(f"Zmiany między poszczególnymi okresami:")
                 st.dataframe(percent_changes)
                 st.markdown(summary_fin)
+                
+                # Analiza wskaźnikowa
                 st.subheader(f'Analiza wskaźnikowa {company_name}')
                 st.dataframe(indicators_df)
                 st.markdown(summary_ind)
 
+                # Podstawowe wskaźniki giełdowe
                 st.subheader('Podstawowe wskaźniki giełdowe')
                 st.pyplot(fig)
                 st.markdown(summary_stock_indc)
                 
-                
                 try:
-
                     if dividend_df.empty or history_df.empty:
                         st.warning("Brak danych o dywidendzie do wyświetlenia wykresów.")
                     else:
-
                         st.subheader('Dywidenda i stopa dywidendy na przestrzeni czasu')
 
                         fig1 = go.Figure()
@@ -729,10 +747,11 @@ if st.button('Wygeneruj raport'):
                         )
 
                         fig1.update_xaxes(rangeslider_visible=True)
-
                         fig1.update_yaxes(autorange=True)
                         st.plotly_chart(fig1)
+
                         st.markdown("Powyższy wykres ilustruje zmiany w wysokości wypłacanej przez firmę dywidendy oraz stopę dywidendy w dniu jej wypłaty.")
+
                         st.subheader('Cena akcji i wypłacona dywidenda na przestrzeni czasu')
 
                         fig2 = go.Figure()
@@ -768,7 +787,7 @@ if st.button('Wygeneruj raport'):
                 except ValueError as e:
                     st.error(str(e))
 
-
+                # Analiza SWOT
                 st.subheader(f"Analiza SWOT firmy {company_name}:")        
                 Strenghts_response = Strenghts(name_ticker)
                 Weaknesses_response = Weaknesses(name_ticker)
@@ -789,15 +808,16 @@ if st.button('Wygeneruj raport'):
                     st.markdown("### Zagrożenia:")
                     st.markdown(Threats_response)
 
-                SWOT_summary_response=SWOT_summary(Strenghts_response,Weaknesses_response,Opportunities_response,Threats_response, name_ticker)
+                SWOT_summary_response = SWOT_summary(Strenghts_response, Weaknesses_response, Opportunities_response, Threats_response, name_ticker)
                 st.markdown(SWOT_summary_response)
 
+                # Artykuły i wiadomości
                 Articles = create_articles_dataframe(ticker)
                 Articles = pd.DataFrame(Articles)
                 Articles_short = streszczenie_artykułów(Articles)
                 df_streszczenia_to_AI = Articles_short[['Streszczenie']]
                 summarized_news = summarize_news(df_streszczenia_to_AI)
-                News_links=Articles_short[['Link']]
+                News_links = Articles_short[['Link']]
 
                 if not News_links.empty:  # Sprawdza, czy News_links nie jest pusty
                     st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
@@ -805,6 +825,7 @@ if st.button('Wygeneruj raport'):
                     with st.expander("Źródła wiadomości:"):
                         st.dataframe(News_links)
 
+                # Podsumowanie raportu
                 Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news)
                 st.subheader(f"Podsumowanie raportu inwestycyjnego dotyczącego {company_name}")
                 st.markdown(Report_summary_response)
