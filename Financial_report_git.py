@@ -825,18 +825,23 @@ if st.button('Wygeneruj raport'):
                 st.markdown(SWOT_summary_response)
 
                 # Artykuły i wiadomości
-                Articles = create_articles_dataframe(ticker)
-                Articles = pd.DataFrame(Articles)
-                Articles_short = streszczenie_artykułów(Articles)
-                df_streszczenia_to_AI = Articles_short[['Streszczenie']]
-                summarized_news = summarize_news(df_streszczenia_to_AI)
-                News_links = Articles_short[['Link']]
+                try:
+                    Articles = create_articles_dataframe(ticker)
+                    Articles = pd.DataFrame(Articles)
+                    Articles_short = streszczenie_artykułów(Articles)
+                    df_streszczenia_to_AI = Articles_short[['Streszczenie']]
+                    summarized_news = summarize_news(df_streszczenia_to_AI)
+                    News_links = Articles_short[['Link']]
 
-                if not News_links.empty:  # Sprawdza, czy News_links nie jest pusty
-                    st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
-                    st.markdown(summarized_news)
-                    with st.expander("Źródła wiadomości:"):
-                        st.dataframe(News_links)
+                    if not News_links.empty:  # Sprawdza, czy News_links nie jest pusty
+                        st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
+                        st.markdown(summarized_news)
+                        with st.expander("Źródła wiadomości:"):
+                            st.dataframe(News_links)
+                except KeyError as e:
+                    st.error(f"Błąd: {e}")
+                except Exception as e:
+                    st.error(f"Nieoczekiwany błąd: {e}")
 
                 # Podsumowanie raportu
                 Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news)
