@@ -415,7 +415,7 @@ if st.button('Wygeneruj raport'):
                 results = []
 
                 for date, dividend in dividends.items():
-                    history = stock.history(start=date, end=date + pd.Timedelta(days=1))
+                    history = stock.history(start=date, end=date + pd.Timedelta(days=31), interval="1mo")  # Pobieranie danych z miesięcznym interwałem
                     if not history.empty:
                         close_price = history['Close'].iloc[0]
                         dividend_yield = (dividend / close_price) * 100
@@ -428,10 +428,11 @@ if st.button('Wygeneruj raport'):
 
                 dividend_df = pd.DataFrame(results)
 
-                history_df = stock.history(period="max")[['Open', 'Close']].reset_index()
+                history_df = stock.history(period="max", interval="1mo")[['Open', 'Close']].reset_index()  # Pobieranie danych z miesięcznym interwałem
                 history_df_close_only = history_df[['Date', 'Close']]
                 history_df_close_only['Date'] = pd.to_datetime(history_df['Date']).dt.date
                 history_df_close_only.set_index('Date', inplace=True)
+
 
                 # Finanse roczne i kwartalne
                 annual_financials = stock.financials.T.sort_index(ascending=False)
