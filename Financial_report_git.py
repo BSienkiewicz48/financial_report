@@ -839,7 +839,7 @@ if st.button('Wygeneruj raport'):
                         with st.expander("Źródła wiadomości:"):
                             st.dataframe(News_links)
                 except KeyError as e:
-                    st.error(f"Błąd: {e}")
+                    st.error(f"Nie udało pobrać się artykułów, źródło blokuje IP streamlit")
                 except Exception as e:
                     st.error(f"Nieoczekiwany błąd: {e}")
 
