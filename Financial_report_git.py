@@ -240,67 +240,32 @@ def safe_calculate(func, *args):
 
 client = OpenAI(api_key=api_key)
 MODEL = "gpt-5-mini"
-def fetch_company_news(company_name):
+def fetch_company_news(company_name: str) -> str:
     """
-    Zwraca (summarized_news_markdown, News_links_df)
+    Zwraca pojedynczy string 'summarized_news' (Markdown):
+    - numerowana lista 5–10 najważniejszych newsów (ostatnie 30 dni) z działającymi linkami
+    - na końcu sekcja 'Ocena ogólna dla inwestycji: Pozytywna/Neutralna/Negatywna' + krótkie uzasadnienie.
     """
     prompt = (
-        f"Znajdź najważniejsze wiadomości z ostatnich 30 dni o spółce '{company_name}'. "
-        f"Zwróć maksymalnie 10 pozycji jako ścisły JSON. Każda pozycja ma mieć: "
-        f"headline, url, source, published_at, summary. Użyj wyszukiwania internetu i podaj prawdziwe linki."
+        "Przeszukaj internet i znajdź najważniejsze wiadomości z ostatnich 30 dni o spółce: "
+        f"'{company_name}'. Zwróć odpowiedź po polsku w czystym Markdown (bez JSON, bez bloków kodu). "
+        "Format odpowiedzi:\n"
+        "1. Sekcja **Najważniejsze wiadomości** jako numerowana lista 5–10 pozycji.\n"
+        "   Każda pozycja: 1–2 zdania streszczenia + źródło i działający link w nawiasie.\n"
+        "2. Na końcu dodaj oddzielną linię: **Ocena ogólna dla inwestycji:** "
+        "_Pozytywna_ / _Neutralna_ / _Negatywna_ — krótko (1–2 zdania) uzasadnij.\n"
+        "Użyj wyszukiwania internetowego i podawaj prawdziwe linki."
     )
-
-    schema = {
-        "name": "news_list",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "headline": {"type": "string"},
-                            "url": {"type": "string"},
-                            "source": {"type": "string"},
-                            "published_at": {"type": "string"},
-                            "summary": {"type": "string"}
-                        },
-                        "required": ["headline", "url", "source", "summary"]
-                    }
-                }
-            },
-            "required": ["items"]
-        }
-    }
 
     resp = client.responses.create(
         model=MODEL,
         input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
         tools=[{"type": "web_search"}],
-        text={"format": {"type": "json_schema", "json_schema": schema}},
         temperature=0.2,
     )
 
-    data = json.loads(resp.output_text)  # gwarantowany JSON wg schema
-    items = data.get("items", [])
-
-    # Markdown „w pigułce”
-    bullets = []
-    for a in items:
-        head = a.get("headline", "").strip()
-        url = a.get("url", "").strip()
-        src = a.get("source", "").strip()
-        pub = (a.get("published_at") or "").strip()
-        summ = a.get("summary", "").strip()
-        bullets.append(f"- **{head}** — {src} ({pub}). {summ} [link]({url})")
-    summarized_news = "\n".join(bullets) if bullets else "_Brak świeżych newsów._"
-
-    # DF z linkami (jak u Ciebie: kolumna „Link”)
-    df = pd.DataFrame(items)
-    News_links = pd.DataFrame({"Link": df["url"]}) if not df.empty else pd.DataFrame(columns=["Link"])
-    return summarized_news, News_links
+    # Zwracamy gotowy tekst do wstawienia w st.markdown()
+    return resp.output_text
 
 
 
