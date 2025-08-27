@@ -215,7 +215,7 @@ def Report_summary(Recommendations, Basic_fin, Fin_ind, Market_ind, SWOT, NEWS):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5",
+        model="gpt-5-mini",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -225,12 +225,7 @@ def Report_summary(Recommendations, Basic_fin, Fin_ind, Market_ind, SWOT, NEWS):
     Report_summary = response.choices[0].message.content.strip()
     return Report_summary
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive'
-}
+
 
 def safe_calculate(func, *args):
     try:
@@ -244,7 +239,7 @@ def safe_calculate(func, *args):
 
 
 client = OpenAI(api_key=api_key)
-MODEL = "gpt-4o"
+MODEL = "gpt-5-mini"
 def fetch_company_news(company_name: str):
     """
     Zwraca (summarized_news_markdown, News_links_df)
