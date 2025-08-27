@@ -21,7 +21,7 @@ def get_ticker_for_company(company_name):
     client = openai.OpenAI(api_key=api_key)
     
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Only response, short as possible, no dot on end"},
             {"role": "user", "content": prompt}
@@ -47,7 +47,7 @@ Poniższa tabela zawiera dane:
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno że analitycy sugerują sprzedaż lub kupno akcji"},
             {"role": "user", "content": prompt}
@@ -66,7 +66,7 @@ def summarize_indicators(df):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno czy dobre czy złe wskaźniki finansowe"},
             {"role": "user", "content": prompt}
@@ -85,7 +85,7 @@ def summarize_market_indicators(df):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno czy dobre czy złe wskaźniki finansowe"},
             {"role": "user", "content": prompt}
@@ -106,7 +106,7 @@ def summarize_financials_with_percent_changes(percent_changes, basic_fin, compan
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno czy dobre czy złe wskaźniki finansowe"},
             {"role": "user", "content": prompt}
@@ -124,7 +124,7 @@ def Strenghts(company_name):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -142,7 +142,7 @@ def Weaknesses(company_name):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -159,7 +159,7 @@ def Opportunities(company_name):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -177,7 +177,7 @@ def Threats(company_name):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -196,7 +196,7 @@ def SWOT_summary(S,W,O,T,name_ticker):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5-nano",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
@@ -213,7 +213,7 @@ def Report_summary(Recommendations, Basic_fin, Fin_ind, Market_ind, SWOT, NEWS):
     client = openai.OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
-        model="gpt-5 nano",
+        model="gpt-5",
         messages=[
             {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
             {"role": "user", "content": prompt}
