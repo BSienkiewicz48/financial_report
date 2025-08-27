@@ -240,7 +240,7 @@ def safe_calculate(func, *args):
 
 client = OpenAI(api_key=api_key)
 MODEL = "gpt-5-mini"
-def fetch_company_news(company_name: str):
+def fetch_company_news(company_name):
     """
     Zwraca (summarized_news_markdown, News_links_df)
     """
@@ -786,17 +786,13 @@ if st.button('Wygeneruj raport'):
                 SWOT_summary_response = SWOT_summary(Strenghts_response, Weaknesses_response, Opportunities_response, Threats_response, name_ticker)
                 st.markdown(SWOT_summary_response)
 
+                
+
                 # Artykuły i wiadomości
                 try:
-                    summarized_news, News_links = fetch_company_news(company_name)
-
-                    if not News_links.empty:  # Sprawdza, czy News_links nie jest pusty
-                        st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
-                        st.markdown(summarized_news)
-                        with st.expander("Źródła wiadomości:"):
-                            st.dataframe(News_links)
-                    else:
-                        st.info("Brak wyników dla podanej spółki.")
+                    summarized_news = fetch_company_news(company_name)
+                    st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
+                    st.markdown(summarized_news)
 
                 except Exception as e:
                     st.error(f"Nie udało się pobrać newsów: {e}")
