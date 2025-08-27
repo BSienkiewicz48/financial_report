@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 import requests
 import time
 import random
+import json
+from openai import OpenAI
 
 api_key = st.secrets["API_KEY"]
 
@@ -230,109 +232,6 @@ HEADERS = {
     'Connection': 'keep-alive'
 }
 
-def get_article_links(ticker):
-    url = f'https://finance.yahoo.com/quote/{ticker}/latest-news/'
-    
-    try:
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()  # Sprawdza, czy kod statusu jest 200
-    except requests.exceptions.RequestException as e:
-        print(f"Nie udało się pobrać strony: {url}. Błąd: {e}")
-        return []
-    
-    soup = BeautifulSoup(response.text, 'html.parser')
-    article_elements = soup.select('a.subtle-link')
-    
-    article_links = set()  
-    for element in article_elements:
-        article_url = element.get('href')
-        if article_url and article_url.startswith('/'):
-            article_url = f"https://finance.yahoo.com{article_url}"
-        
-        if article_url.startswith('https://finance.yahoo.com/news/'):
-            article_links.add(article_url)  
-    
-    return list(article_links)
-
-def scrape_article_text(url):
-    try:
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Nie udało się pobrać artykułu: {url}. Błąd: {e}")
-        return "Brak treści."
-    
-    soup = BeautifulSoup(response.text, 'html.parser')
-    article_text = soup.find('div', class_='body yf-5ef8bf')
-    
-    return article_text.get_text().strip() if article_text else "Brak treści."
-
-def create_articles_dataframe(ticker):
-    links = get_article_links(ticker)
-    
-    data = {
-        "Link": [],
-        "Treść": []
-    }
-    
-    for link in links[:10]:  # Ograniczenie do 10 artykułów
-        # Pomijanie linków, które prowadzą tylko do "https://finance.yahoo.com/news/"
-        if link == "https://finance.yahoo.com/news/":
-            continue
-        
-        text = scrape_article_text(link)
-        data["Link"].append(link)
-        data["Treść"].append(text)
-        
-        # Losowy czas oczekiwania między 0.5 a 2 sekundami
-        time.sleep(random.uniform(0.5, 2))
-        
-        df = pd.DataFrame(data)
-        return df
-
-client = openai.OpenAI(api_key=api_key)
-
-def streszczenie_artykułów(df):
-
-    df['Streszczenie'] = ''
-    
-    for index, row in df.iterrows():
-        content = row['Treść']
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"Streść ten artykuł: {content}. Poszukaj w nim informacji na temat {company_name}. Oceń i napisz pogrubieniem czy w artykule pisano o {company_name} który był pozytywny dla inwestycji w akcje tej firmy, neutralny czy negatywny."}
-            ]
-        )
-        
-        summary = response.choices[0].message.content
-        
-        df.at[index, 'Streszczenie'] = summary
-    
-    return df
-
-def summarize_news(df_streszczenia_to_AI):
-
-    table_string_indc = df_streszczenia_to_AI.to_string(index=True)
-    
-    prompt = f"Przeanalizuj najnowsze wiadomości dotyczące {company_name} zawarte w tabeli:\n\n{table_string_indc}\n\n. Napisz podsumowanie wiadomości a w ostatnim zdaniu napisz pogrubieniem czy jest to negatywne lub neutralne lub pozytywne pod kątem inwestycji w akcje firmy {company_name}. Jeśli tabela z wiadomościami jest pusta to napisz tylko Brak danych"
-
-    client = openai.OpenAI(api_key=api_key)
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Ma to być fragment do raportu inwestycyjnego, same konkrety, pisz jasno."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    summary_news = response.choices[0].message.content.strip()
-    return summary_news
-
-
 def safe_calculate(func, *args):
     try:
         result = func(*args)
@@ -341,6 +240,74 @@ def safe_calculate(func, *args):
         return result
     except (TypeError, ZeroDivisionError, KeyError):
         return None
+
+
+
+client = OpenAI(api_key=api_key)
+MODEL = "gpt-4o"
+def fetch_company_news(company_name: str):
+    """
+    Zwraca (summarized_news_markdown, News_links_df)
+    """
+    prompt = (
+        f"Znajdź najważniejsze wiadomości z ostatnich 30 dni o spółce '{company_name}'. "
+        f"Zwróć maksymalnie 10 pozycji jako ścisły JSON. Każda pozycja ma mieć: "
+        f"headline, url, source, published_at, summary. Użyj wyszukiwania internetu i podaj prawdziwe linki."
+    )
+
+    schema = {
+        "name": "news_list",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "headline": {"type": "string"},
+                            "url": {"type": "string"},
+                            "source": {"type": "string"},
+                            "published_at": {"type": "string"},
+                            "summary": {"type": "string"}
+                        },
+                        "required": ["headline", "url", "source", "summary"]
+                    }
+                }
+            },
+            "required": ["items"]
+        }
+    }
+
+    resp = client.responses.create(
+        model=MODEL,
+        input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+        tools=[{"type": "web_search"}],
+        text={"format": {"type": "json_schema", "json_schema": schema}},
+        temperature=0.2,
+    )
+
+    data = json.loads(resp.output_text)  # gwarantowany JSON wg schema
+    items = data.get("items", [])
+
+    # Markdown „w pigułce”
+    bullets = []
+    for a in items:
+        head = a.get("headline", "").strip()
+        url = a.get("url", "").strip()
+        src = a.get("source", "").strip()
+        pub = (a.get("published_at") or "").strip()
+        summ = a.get("summary", "").strip()
+        bullets.append(f"- **{head}** — {src} ({pub}). {summ} [link]({url})")
+    summarized_news = "\n".join(bullets) if bullets else "_Brak świeżych newsów._"
+
+    # DF z linkami (jak u Ciebie: kolumna „Link”)
+    df = pd.DataFrame(items)
+    News_links = pd.DataFrame({"Link": df["url"]}) if not df.empty else pd.DataFrame(columns=["Link"])
+    return summarized_news, News_links
+
+
 
 
 st.title('Raport inwestycyjny')
@@ -826,22 +793,18 @@ if st.button('Wygeneruj raport'):
 
                 # Artykuły i wiadomości
                 try:
-                    Articles = create_articles_dataframe(ticker)
-                    Articles = pd.DataFrame(Articles)
-                    Articles_short = streszczenie_artykułów(Articles)
-                    df_streszczenia_to_AI = Articles_short[['Streszczenie']]
-                    summarized_news = summarize_news(df_streszczenia_to_AI)
-                    News_links = Articles_short[['Link']]
+                    summarized_news, News_links = fetch_company_news(company_name)
 
                     if not News_links.empty:  # Sprawdza, czy News_links nie jest pusty
                         st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
                         st.markdown(summarized_news)
                         with st.expander("Źródła wiadomości:"):
                             st.dataframe(News_links)
-                except KeyError as e:
-                    st.error(f"Nie udało pobrać się artykułów, źródło blokuje IP streamlit")
+                    else:
+                        st.info("Brak wyników dla podanej spółki.")
+
                 except Exception as e:
-                    st.error(f"Nieoczekiwany błąd: {e}")
+                    st.error(f"Nie udało się pobrać newsów: {e}")
 
                 # Podsumowanie raportu
                 Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news)
