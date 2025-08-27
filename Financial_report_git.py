@@ -261,7 +261,6 @@ def fetch_company_news(company_name: str) -> str:
         model=MODEL,
         input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
         tools=[{"type": "web_search"}],
-        temperature=0.2,
     )
 
     # Zwracamy gotowy tekst do wstawienia w st.markdown()
