@@ -332,12 +332,15 @@ if st.button('Wygeneruj raport'):
         try:
             stock = yf.Ticker(ticker)
             info = run_with_retry(lambda: stock.info)
-            company_name = info.get('longName')
+            if not isinstance(info, dict):
+                info = {}
+
+            company_name = info.get('longName') or info.get('shortName') or ticker
 
             if not company_name:
                 st.error(f"Incorrect ticker: {ticker} or Yahoo Finance error")
             else:
-                currency_name = info.get('currency')
+                currency_name = info.get('currency') or "N/A"
 
                 # Rekomendacje analityków
                 recommendations = run_with_retry(lambda: stock.recommendations)
