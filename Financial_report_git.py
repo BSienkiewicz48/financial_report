@@ -315,6 +315,12 @@ st.title('Raport inwestycyjny')
 
 company_name = st.text_input("Wprowadź nazwę firmy", "")
 
+st.caption(
+    "⚠️ Disclaimer: To narzędzie ma charakter pokazowy i edukacyjny. "
+    "Treści prezentowane w aplikacji nie stanowią rekomendacji inwestycyjnej, porady finansowej ani oferty. "
+    "Materiał służy wyłącznie prezentacji możliwości i umiejętności twórcy oraz celom edukacyjnym."
+)
+
 if st.button('Wygeneruj raport'):
 
     try:
