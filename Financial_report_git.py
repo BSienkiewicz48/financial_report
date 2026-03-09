@@ -41,6 +41,29 @@ def get_ticker_for_company(company_name):
     return ticker
 
 
+def is_rate_limited_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "too many requests" in message
+        or "rate limited" in message
+        or "429" in message
+    )
+
+
+def run_with_retry(func, retries: int = 4, base_delay: float = 1.5):
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return func()
+        except Exception as exc:
+            last_error = exc
+            if not is_rate_limited_error(exc) or attempt == retries - 1:
+                raise
+            sleep_time = base_delay * (2 ** attempt) + random.uniform(0, 0.7)
+            time.sleep(sleep_time)
+    raise last_error
+
+
 @st.cache_data(ttl=43200, show_spinner=False)
 def summarize_recommendations(df):
     
@@ -294,23 +317,30 @@ company_name = st.text_input("Wprowadź nazwę firmy", "")
 
 if st.button('Wygeneruj raport'):
 
-    ticker = get_ticker_for_company(company_name)
+    try:
+        ticker = get_ticker_for_company(company_name)
+    except Exception as e:
+        if is_rate_limited_error(e):
+            st.error("Limit zapytań do API został przekroczony. Spróbuj ponownie za chwilę.")
+        else:
+            st.error(f"Nie udało się ustalić tickera: {e}")
+        st.stop()
 
     if not ticker:
         st.warning("Please enter a ticker")
     else:
         try:
             stock = yf.Ticker(ticker)
-            company_name = stock.info.get('longName')
+            info = run_with_retry(lambda: stock.info)
+            company_name = info.get('longName')
 
             if not company_name:
                 st.error(f"Incorrect ticker: {ticker} or Yahoo Finance error")
             else:
-                info = stock.info
                 currency_name = info.get('currency')
 
                 # Rekomendacje analityków
-                recommendations = stock.recommendations
+                recommendations = run_with_retry(lambda: stock.recommendations)
                 name_ticker = f"{company_name} {ticker}"
                 summary = "Brak rekomendacji analityków do podsumowania."
 
@@ -357,10 +387,10 @@ if st.button('Wygeneruj raport'):
                 st.markdown(summary)
 
                 # Dywidendy
-                dividends = stock.dividends
+                dividends = run_with_retry(lambda: stock.dividends)
 
-                history_df = stock.history(period="max", interval="1mo")[['Open', 'Close']].reset_index()
-                history_daily_close = stock.history(period="max", interval="1d")[['Close']].reset_index()
+                history_df = run_with_retry(lambda: stock.history(period="max", interval="1mo"))[["Open", "Close"]].reset_index()
+                history_daily_close = run_with_retry(lambda: stock.history(period="max", interval="1d"))[["Close"]].reset_index()
 
                 if dividends is None or dividends.empty:
                     dividend_df = pd.DataFrame(columns=["Date", "Dividend", "Close Price", "Dividend Yield (%)"])
@@ -385,10 +415,10 @@ if st.button('Wygeneruj raport'):
 
 
                 # Finanse roczne i kwartalne
-                annual_financials = stock.financials.T.sort_index(ascending=False)
-                annual_balance_sheet = stock.balance_sheet.T.sort_index(ascending=False)
-                quarterly_financials = stock.quarterly_financials.T.sort_index(ascending=False)
-                quarterly_balance_sheet = stock.quarterly_balance_sheet.T.sort_index(ascending=False)
+                annual_financials = run_with_retry(lambda: stock.financials).T.sort_index(ascending=False)
+                annual_balance_sheet = run_with_retry(lambda: stock.balance_sheet).T.sort_index(ascending=False)
+                quarterly_financials = run_with_retry(lambda: stock.quarterly_financials).T.sort_index(ascending=False)
+                quarterly_balance_sheet = run_with_retry(lambda: stock.quarterly_balance_sheet).T.sort_index(ascending=False)
 
                 latest_annual_financial_date = annual_financials.index[0]
                 latest_quarterly_financial_date = quarterly_financials.index[0]
@@ -802,6 +832,9 @@ if st.button('Wygeneruj raport'):
                 st.markdown(Report_summary_response)
 
         except Exception as e:
-            st.error("Nieprawidłowy ticker")
+            if is_rate_limited_error(e):
+                st.error("Yahoo Finance chwilowo limituje zapytania (Too Many Requests / 429). Spróbuj ponownie za chwilę.")
+            else:
+                st.error("Nie udało się pobrać danych dla tego tickera.")
             st.error(f"Error: {e}")
 
