@@ -12,15 +12,22 @@ import requests
 import time
 import random
 import json
+from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 
 api_key = st.secrets["API_KEY"]
 
 
+@st.cache_resource
+def get_openai_client():
+    return openai.OpenAI(api_key=api_key)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_ticker_for_company(company_name):
     prompt = f"provide (ONLY!) the ticker for Yahoo Finance for the company, if user provides ticker use it: {company_name}"
     
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
     
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -34,6 +41,7 @@ def get_ticker_for_company(company_name):
     return ticker
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def summarize_recommendations(df):
     
     table_string = df.to_string(index=True)
@@ -46,7 +54,7 @@ Poniższa tabela zawiera dane:
 {df}
 """
     
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -59,13 +67,14 @@ Poniższa tabela zawiera dane:
     summary = response.choices[0].message.content.strip()
     return summary
 
-def summarize_indicators(df):
+@st.cache_data(ttl=43200, show_spinner=False)
+def summarize_indicators(df, company_name):
 
     table_string_indc = df.to_string(index=True)
     
     prompt = f"Przeanalizuj krótko sytuację finansową firmy na podstawie wskaźników:\n\n{table_string_indc}\n\n uwzględnij to w jakiej branży działa firma {company_name} wskaźniki z tej samej kategorii analizuj razem, w jednym punkcie (na przykład płynność) i dodawaj ocenę wskaźników przy każdej kategorii: Negatywne/Neutralne/Pozytywne pod kątem zakupu akcji, na końcu przy podsumowaniu pisz ocenę ogólną pogrubieniem(ale tylko słowa Negatywne/Neutralne/Pozytywne mają być pogrubione). Poszczególne kategorie oddzielaj linią. Bierz pod uwgę też aktualny poziom wskaźników danej kategorii, czy są na odpowiednim poziomie. Nie pisz nagłówka, ale podpunkty z pogrubieniem czego dotyczy pisz. Nie wypisuj wszystkich danych w tekście, użytkownik będzie miał tablkę załączoną. Pamiętaj też że najświeższe dane mogą być międzyokresowe i ewentualne odchylenia mogą wynikać z sezonowości danej firmy."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -78,13 +87,14 @@ def summarize_indicators(df):
     summary_ind = response.choices[0].message.content.strip()
     return summary_ind
 
-def summarize_market_indicators(df):
+@st.cache_data(ttl=43200, show_spinner=False)
+def summarize_market_indicators(df, company_name):
 
     indicators_2_df_str = df.to_string(index=True)
     
     prompt = f"Przeanalizuj krótko sytuację finansową firmy na podstawie wskaźników:\n\n{indicators_2_df_str}\n\n uwzględnij to w jakiej branży działa firma {company_name} wskaźniki z tej samej kategorii analizuj razem, w jednym punkcie (na przykład płynność) i dodawaj ocenę wskaźników przy każdej kategorii: Negatywne/Neutralne/Pozytywne pod kątem zakupu akcji, na końcu przy podsumowaniu pisz ocenę ogólną pogrubieniem(ale tylko słowa Negatywne/Neutralne/Pozytywne mają być pogrubione). Poszczególne kategorie oddzielaj linią. Bierz pod uwgę też aktualny poziom wskaźników danej kategorii, czy są na odpowiednim poziomie. Nie pisz nagłówka, ale podpunkty z pogrubieniem czego dotyczy pisz. Nie wypisuj wszystkich danych w tekście, użytkownik będzie miał tablkę załączoną. Pamiętaj też że najświeższe dane mogą być międzyokresowe i ewentualne odchylenia mogą wynikać z sezonowości danej firmy."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -98,6 +108,7 @@ def summarize_market_indicators(df):
     return summary_stock_ind
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def summarize_financials_with_percent_changes(percent_changes, basic_fin, company_name):
 
     table_string_percent_changes = percent_changes.to_string(index=True)
@@ -105,7 +116,7 @@ def summarize_financials_with_percent_changes(percent_changes, basic_fin, compan
     
     prompt = f"Przeanalizuj krótko sytuację finansową firmy {company_name} na podstawie procentowych zmian danych finansowych i podstawowych danych finansowych:\n\nProcentowe zmiany danych finansowych:\n{table_string_percent_changes}\n\nPodstawowe dane finansowe:\n{table_string_basic}\n\n Uwzględnij to, w jakiej branży działa firma {company_name}. Dane z tej samej kategorii analizuj razem, w jednym punkcie i dodawaj ocenę grupy danych przy każdej kategorii: Negatywne/Neutralne/Pozytywne pod kątem zakupu akcji, Pisz to na końcu z pogrubieniem, na końcu przy podsumowaniu pisz ocenę ogólną pogrubieniem. Poszczególne kategorie oddzielaj linią. Bierz pod uwagę w jakiej branży działa firma, czy taki poziom poszczególnych danych jest charakterystyczny dla danego sektora. Nie pisz nagłówka, ale podpunkty z pogrubieniem czego dotyczy pisz. Nie wypisuj wszystkich danych w tekście, użytkownik będzie miał tabelę załączoną. Pamiętaj też, że najświeższe dane mogą być międzyokresowe i ewentualne odchylenia mogą wynikać z sezonowości danej firmy."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -119,11 +130,12 @@ def summarize_financials_with_percent_changes(percent_changes, basic_fin, compan
     return summary_financials
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def Strenghts(company_name):
 
     prompt = f"Przeanalizuj krótko sytuację firmy {company_name}, napisz jakie mocne strony ma, staraj się pisać głównie te rzeczy które wyróżniają ją na tle konkurencji. Nie pisz wstępu. Pisz 3 główne punkty - najmocniejsze strony i krótko je rozwiń dlaczego akurat to jest ich mocną stroną na tle konkurencji."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -137,11 +149,12 @@ def Strenghts(company_name):
     return Strenghts
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def Weaknesses(company_name):
 
     prompt = f"Przeanalizuj krótko sytuację firmy {company_name}, napisz jakie słabe strony ma, jakie słabości, staraj się pisać głównie te rzeczy które wyróżniają ją na tle konkurencji. Nie pisz wstępu. Pisz 3 główne punkty - najsłabsze strony i krótko je rozwiń dlaczego akurat to jest ich słabą stroną na tle konkurencji."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -154,11 +167,12 @@ def Weaknesses(company_name):
     Weaknesses = response.choices[0].message.content.strip()
     return Weaknesses
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def Opportunities(company_name):
 
     prompt = f"Przeanalizuj krótko sytuację firmy {company_name}, napisz jakie szanse przed nią stoją, staraj się pisać głównie te okazje dla firmy które wyróżniają ją na tle konkurencji. Nie pisz wstępu. Pisz 3 główne punkty - największe szanse i krótko je rozwiń dlaczego akurat to może być ich szansą na tle konkurencji."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -172,11 +186,12 @@ def Opportunities(company_name):
     return Opportunities
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def Threats(company_name):
 
     prompt = f"Przeanalizuj krótko sytuację firmy {company_name}, napisz jakie zagrożenia przed nią stoją, staraj się pisać głównie o tych zagrożeniach dla firmy które wyróżniają ją na tle konkurencji. Nie pisz wstępu. Pisz 3 główne punkty - największe zagrożenia i krótko je rozwiń dlaczego akurat to może być ich zagrożeniem na tle konkurencji."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -191,11 +206,12 @@ def Threats(company_name):
 
 
 
+@st.cache_data(ttl=43200, show_spinner=False)
 def SWOT_summary(S,W,O,T,name_ticker):
 
     prompt = f"Napisz krótkie podsumowanie wszystkich składowych analizy SWOT firmy {name_ticker}. Mocnych stron: {S}, Słabych stron: {W}, Okazji: {O} i zagrożeń: {T}. Na końcu podsumowania napisz jedno zdanie w którym POGRUBIENIEM! napiszesz czy na podstawie analizy SWOT sytuacja jest Negatywna lub Neutralna lub pozytywna dla zakupu akcji tej firmy. Nie pisz podpunktów, napisz podsumowanie ciągiem. Ma mieć maksymalnie 5 zdań."
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-nano",
@@ -208,11 +224,12 @@ def SWOT_summary(S,W,O,T,name_ticker):
     SWOT_summary = response.choices[0].message.content.strip()
     return SWOT_summary
 
-def Report_summary(Recommendations, Basic_fin, Fin_ind, Market_ind, SWOT, NEWS):
+@st.cache_data(ttl=43200, show_spinner=False)
+def Report_summary(Recommendations, Basic_fin, Fin_ind, Market_ind, SWOT, NEWS, company_name):
 
     prompt = f"Napisz krótkie podsumowanie raportu na temat inwestycji w {company_name}, podsumowanie oprzyj na tych danych: {Recommendations}, {Basic_fin}, {Fin_ind}, {Market_ind}, {SWOT}, {NEWS}. Podsumowanie musi zawierać odniesienie do każdego fragmentu ale nie pisz tego samego, już nie podawaj masy liczb. Na koniec ma być zdanie oceniające czy aktualnie warto kupować czy nie. Staraj sie możliwie rzadko używać określenia że trudno określic. Rekomendację napisz pogrubieniem. Zawsze na koniec musi być czy według stanu na dzień dzisiejszy: Nie warto inwestować, Warto inwestować, Nie da się jednoznacznie określić. Nie pisz nagłówka. "
 
-    client = openai.OpenAI(api_key=api_key)
+    client = get_openai_client()
 
     response = client.chat.completions.create(
         model="gpt-5-mini",
@@ -238,8 +255,10 @@ def safe_calculate(func, *args):
 
 
 
-client = OpenAI(api_key=api_key)
 MODEL = "gpt-5-mini"
+
+
+@st.cache_data(ttl=14400, show_spinner=False)
 def fetch_company_news(company_name: str) -> str:
     """
     Zwraca pojedynczy string 'summarized_news' (Markdown):
@@ -257,7 +276,7 @@ def fetch_company_news(company_name: str) -> str:
         "Użyj wyszukiwania internetowego i podawaj prawdziwe linki."
     )
 
-    resp = client.responses.create(
+    resp = OpenAI(api_key=api_key).responses.create(
         model=MODEL,
         input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
         tools=[{"type": "web_search"}],
@@ -287,9 +306,13 @@ if st.button('Wygeneruj raport'):
             if not company_name:
                 st.error(f"Incorrect ticker: {ticker} or Yahoo Finance error")
             else:
+                info = stock.info
+                currency_name = info.get('currency')
+
                 # Rekomendacje analityków
                 recommendations = stock.recommendations
                 name_ticker = f"{company_name} {ticker}"
+                summary = "Brak rekomendacji analityków do podsumowania."
 
                 if recommendations is None or recommendations.empty:
                     st.warning("Brak rekomendacji analityków dla tej firmy.")
@@ -301,9 +324,6 @@ if st.button('Wygeneruj raport'):
                     recommendations = pd.DataFrame(recommendations)
                     
                     st.subheader(f'Rekomendacje analityków dla {company_name} ({ticker})')
-
-                    info = stock.info
-                    currency_name = info.get('currency')
 
                     recommendations = recommendations.rename(columns={
                         'strongBuy': 'Silne rekom. kupna',
@@ -331,30 +351,34 @@ if st.button('Wygeneruj raport'):
                     
                     with st.expander("Rozwiń, aby zobaczyć tabelę z liczbą poszczególnych rekomendacji"):
                         st.dataframe(recommendations)
-                
-                summary = summarize_recommendations(recommendations_percentage)
+
+                    summary = summarize_recommendations(recommendations_percentage)
+
                 st.markdown(summary)
 
                 # Dywidendy
                 dividends = stock.dividends
 
-                results = []
+                history_df = stock.history(period="max", interval="1mo")[['Open', 'Close']].reset_index()
+                history_daily_close = stock.history(period="max", interval="1d")[['Close']].reset_index()
 
-                for date, dividend in dividends.items():
-                    history = stock.history(start=date, end=date + pd.Timedelta(days=31), interval="1mo")  # Pobieranie danych z miesięcznym interwałem
-                    if not history.empty:
-                        close_price = history['Close'].iloc[0]
-                        dividend_yield = (dividend / close_price) * 100
-                        results.append({
-                            "Date": date,
-                            "Dividend": dividend,
-                            "Close Price": close_price,
-                            "Dividend Yield (%)": dividend_yield
-                        })
+                if dividends is None or dividends.empty:
+                    dividend_df = pd.DataFrame(columns=["Date", "Dividend", "Close Price", "Dividend Yield (%)"])
+                else:
+                    dividend_df = dividends.rename("Dividend").reset_index()
+                    dividend_df['Date'] = pd.to_datetime(dividend_df['Date'])
+                    history_daily_close['Date'] = pd.to_datetime(history_daily_close['Date'])
 
-                dividend_df = pd.DataFrame(results)
+                    dividend_df = pd.merge_asof(
+                        dividend_df.sort_values('Date'),
+                        history_daily_close.sort_values('Date'),
+                        on='Date',
+                        direction='backward'
+                    )
+                    dividend_df = dividend_df.rename(columns={'Close': 'Close Price'})
+                    dividend_df['Dividend Yield (%)'] = (dividend_df['Dividend'] / dividend_df['Close Price']) * 100
+                    dividend_df = dividend_df.dropna(subset=['Close Price'])
 
-                history_df = stock.history(period="max", interval="1mo")[['Open', 'Close']].reset_index()  # Pobieranie danych z miesięcznym interwałem
                 history_df_close_only = history_df[['Date', 'Close']]
                 history_df_close_only['Date'] = pd.to_datetime(history_df['Date']).dt.date
                 history_df_close_only.set_index('Date', inplace=True)
@@ -537,8 +561,9 @@ if st.button('Wygeneruj raport'):
                     'Return on Equity (ROE) (%)': 'Zwrot z kap. własnego (ROE) %'
                 })
                 
-                summary_ind = summarize_indicators(indicators_df)
-                summary_fin = summarize_financials_with_percent_changes(percent_changes, basic_fin, company_name)
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    summary_ind_future = executor.submit(summarize_indicators, indicators_df, company_name)
+                    summary_fin_future = executor.submit(summarize_financials_with_percent_changes, percent_changes, basic_fin, company_name)
 
                 latest_financials_2.index = pd.to_datetime(latest_financials_2.index).date
                 latest_balance_sheet_2.index = pd.to_datetime(latest_balance_sheet_2.index).date
@@ -633,7 +658,9 @@ if st.button('Wygeneruj raport'):
 
                 plt.tight_layout()
 
-                summary_stock_indc = summarize_market_indicators(AI_indicators_df)
+                summary_stock_indc = summarize_market_indicators(AI_indicators_df, company_name)
+                summary_ind = summary_ind_future.result()
+                summary_fin = summary_fin_future.result()
 
                 # Podstawowe dane finansowe
                 st.subheader('Podstawowe dane finansowe')
@@ -728,10 +755,17 @@ if st.button('Wygeneruj raport'):
 
                 # Analiza SWOT
                 st.subheader(f"Analiza SWOT firmy {company_name}:")        
-                Strenghts_response = Strenghts(name_ticker)
-                Weaknesses_response = Weaknesses(name_ticker)
-                Opportunities_response = Opportunities(name_ticker)
-                Threats_response = Threats(name_ticker)
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    strengths_future = executor.submit(Strenghts, name_ticker)
+                    weaknesses_future = executor.submit(Weaknesses, name_ticker)
+                    opportunities_future = executor.submit(Opportunities, name_ticker)
+                    threats_future = executor.submit(Threats, name_ticker)
+                    summarized_news_future = executor.submit(fetch_company_news, company_name)
+
+                    Strenghts_response = strengths_future.result()
+                    Weaknesses_response = weaknesses_future.result()
+                    Opportunities_response = opportunities_future.result()
+                    Threats_response = threats_future.result()
 
                 with st.expander("Wszystkie podpunkty analizy SWOT:"):
 
@@ -753,8 +787,9 @@ if st.button('Wygeneruj raport'):
                 
 
                 # Artykuły i wiadomości
+                summarized_news = "Brak danych o newsach."
                 try:
-                    summarized_news = fetch_company_news(company_name)
+                    summarized_news = summarized_news_future.result()
                     st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
                     st.markdown(summarized_news)
 
@@ -762,7 +797,7 @@ if st.button('Wygeneruj raport'):
                     st.error(f"Nie udało się pobrać newsów: {e}")
 
                 # Podsumowanie raportu
-                Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news)
+                Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news, company_name)
                 st.subheader(f"Podsumowanie raportu inwestycyjnego dotyczącego {company_name}")
                 st.markdown(Report_summary_response)
 
