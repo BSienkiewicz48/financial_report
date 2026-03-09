@@ -390,18 +390,18 @@ if st.button('Wygeneruj raport'):
                 dividends = run_with_retry(lambda: stock.dividends)
 
                 history_df = run_with_retry(lambda: stock.history(period="max", interval="1mo"))[["Open", "Close"]].reset_index()
-                history_daily_close = run_with_retry(lambda: stock.history(period="max", interval="1d"))[["Close"]].reset_index()
+                history_monthly_close = history_df[["Date", "Close"]].copy()
 
                 if dividends is None or dividends.empty:
                     dividend_df = pd.DataFrame(columns=["Date", "Dividend", "Close Price", "Dividend Yield (%)"])
                 else:
                     dividend_df = dividends.rename("Dividend").reset_index()
                     dividend_df['Date'] = pd.to_datetime(dividend_df['Date'])
-                    history_daily_close['Date'] = pd.to_datetime(history_daily_close['Date'])
+                    history_monthly_close['Date'] = pd.to_datetime(history_monthly_close['Date'])
 
                     dividend_df = pd.merge_asof(
                         dividend_df.sort_values('Date'),
-                        history_daily_close.sort_values('Date'),
+                        history_monthly_close.sort_values('Date'),
                         on='Date',
                         direction='backward'
                     )
@@ -590,10 +590,10 @@ if st.button('Wygeneruj raport'):
                     'Return on Assets (ROA) (%)': 'Zwrot z aktywów (ROA) %',
                     'Return on Equity (ROE) (%)': 'Zwrot z kap. własnego (ROE) %'
                 })
-                
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    summary_ind_future = executor.submit(summarize_indicators, indicators_df, company_name)
-                    summary_fin_future = executor.submit(summarize_financials_with_percent_changes, percent_changes, basic_fin, company_name)
+
+                analysis_executor = ThreadPoolExecutor(max_workers=3)
+                summary_ind_future = analysis_executor.submit(summarize_indicators, indicators_df, company_name)
+                summary_fin_future = analysis_executor.submit(summarize_financials_with_percent_changes, percent_changes, basic_fin, company_name)
 
                 latest_financials_2.index = pd.to_datetime(latest_financials_2.index).date
                 latest_balance_sheet_2.index = pd.to_datetime(latest_balance_sheet_2.index).date
@@ -688,9 +688,11 @@ if st.button('Wygeneruj raport'):
 
                 plt.tight_layout()
 
-                summary_stock_indc = summarize_market_indicators(AI_indicators_df, company_name)
+                summary_stock_future = analysis_executor.submit(summarize_market_indicators, AI_indicators_df, company_name)
+                summary_stock_indc = summary_stock_future.result()
                 summary_ind = summary_ind_future.result()
                 summary_fin = summary_fin_future.result()
+                analysis_executor.shutdown(wait=True)
 
                 # Podstawowe dane finansowe
                 st.subheader('Podstawowe dane finansowe')
