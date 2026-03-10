@@ -281,6 +281,21 @@ def safe_calculate(func, *args):
 MODEL = "gpt-5-mini"
 
 
+def stream_markdown_text(text: str, chunk_size: int = 3, delay: float = 0.01) -> str:
+    """Renderuje tekst strumieniowo w stylu czatu i zwraca finalny tekst."""
+    if not text:
+        return ""
+
+    words = text.split()
+
+    def _generator():
+        for i in range(0, len(words), chunk_size):
+            yield " ".join(words[i:i + chunk_size]) + " "
+            time.sleep(delay)
+
+    return st.write_stream(_generator)
+
+
 @st.cache_data(ttl=14400, show_spinner=False)
 def fetch_company_news(company_name: str) -> str:
     """
@@ -393,7 +408,7 @@ if st.button('Wygeneruj raport'):
 
                     summary = summarize_recommendations(recommendations_percentage)
 
-                st.markdown(summary)
+                stream_markdown_text(summary)
 
                 # Dywidendy
                 dividends = run_with_retry(lambda: stock.dividends)
@@ -711,17 +726,17 @@ if st.button('Wygeneruj raport'):
                 st.dataframe(basic_fin)
                 st.markdown(f"Zmiany między poszczególnymi okresami:")
                 st.dataframe(percent_changes)
-                st.markdown(summary_fin)
+                stream_markdown_text(summary_fin)
                 
                 # Analiza wskaźnikowa
                 st.subheader(f'Analiza wskaźnikowa {company_name}')
                 st.dataframe(indicators_df)
-                st.markdown(summary_ind)
+                stream_markdown_text(summary_ind)
 
                 # Podstawowe wskaźniki giełdowe
                 st.subheader('Podstawowe wskaźniki giełdowe')
                 st.pyplot(fig)
-                st.markdown(summary_stock_indc)
+                stream_markdown_text(summary_stock_indc)
                 
                 try:
                     if dividend_df.empty or history_df.empty:
@@ -811,19 +826,19 @@ if st.button('Wygeneruj raport'):
                 with st.expander("Wszystkie podpunkty analizy SWOT:"):
 
                     st.markdown("### Mocne strony:")
-                    st.markdown(Strenghts_response)
+                    stream_markdown_text(Strenghts_response)
                     
                     st.markdown("### Słabe strony:")
-                    st.markdown(Weaknesses_response)
+                    stream_markdown_text(Weaknesses_response)
                 
                     st.markdown("### Okazje:")
-                    st.markdown(Opportunities_response)
+                    stream_markdown_text(Opportunities_response)
                     
                     st.markdown("### Zagrożenia:")
-                    st.markdown(Threats_response)
+                    stream_markdown_text(Threats_response)
 
                 SWOT_summary_response = SWOT_summary(Strenghts_response, Weaknesses_response, Opportunities_response, Threats_response, name_ticker)
-                st.markdown(SWOT_summary_response)
+                stream_markdown_text(SWOT_summary_response)
 
                 
 
@@ -832,7 +847,7 @@ if st.button('Wygeneruj raport'):
                 try:
                     summarized_news = summarized_news_future.result()
                     st.subheader("Najnowsze wiadomości na temat firmy w pigułce:")
-                    st.markdown(summarized_news)
+                    stream_markdown_text(summarized_news)
 
                 except Exception as e:
                     st.error(f"Nie udało się pobrać newsów: {e}")
@@ -840,7 +855,7 @@ if st.button('Wygeneruj raport'):
                 # Podsumowanie raportu
                 Report_summary_response = Report_summary(summary, summary_fin, summary_ind, summary_stock_indc, SWOT_summary_response, summarized_news, company_name)
                 st.subheader(f"Podsumowanie raportu inwestycyjnego dotyczącego {company_name}")
-                st.markdown(Report_summary_response)
+                stream_markdown_text(Report_summary_response)
 
         except Exception as e:
             if is_rate_limited_error(e):
