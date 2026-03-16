@@ -12,10 +12,15 @@ import requests
 import time
 import random
 import json
+import os
+import pickle
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 
 api_key = st.secrets["API_KEY"]
+YAHOO_CACHE_MAX_AGE_DAYS = 14
 
 
 @st.cache_resource
@@ -50,18 +55,137 @@ def is_rate_limited_error(exc: Exception) -> bool:
     )
 
 
-def run_with_retry(func, retries: int = 4, base_delay: float = 1.5):
+def is_transient_yahoo_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    transient_tokens = [
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "connection",
+        "read timed out",
+        "max retries exceeded",
+        "service unavailable",
+        "502",
+        "503",
+        "504",
+    ]
+    return is_rate_limited_error(exc) or any(token in message for token in transient_tokens)
+
+
+def run_with_retry(func, retries: int = 5, base_delay: float = 1.2, max_delay: float = 20.0):
     last_error = None
     for attempt in range(retries):
         try:
             return func()
         except Exception as exc:
             last_error = exc
-            if not is_rate_limited_error(exc) or attempt == retries - 1:
+            if not is_transient_yahoo_error(exc) or attempt == retries - 1:
                 raise
-            sleep_time = base_delay * (2 ** attempt) + random.uniform(0, 0.7)
+            sleep_time = min(base_delay * (2 ** attempt) + random.uniform(0, 1.0), max_delay)
             time.sleep(sleep_time)
     raise last_error
+
+
+def _get_cache_db_path() -> str:
+    cache_dir = os.path.join(os.getcwd(), ".cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, "yahoo_snapshots.db")
+
+
+def _init_cache_db() -> None:
+    db_path = _get_cache_db_path()
+    with sqlite3.connect(db_path, timeout=10) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS yahoo_snapshot (
+                ticker TEXT PRIMARY KEY,
+                fetched_at TEXT NOT NULL,
+                payload BLOB NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def _save_yahoo_snapshot(ticker: str, payload: dict) -> None:
+    _init_cache_db()
+    db_path = _get_cache_db_path()
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    serialized = sqlite3.Binary(pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL))
+
+    with sqlite3.connect(db_path, timeout=10) as conn:
+        conn.execute(
+            """
+            INSERT INTO yahoo_snapshot (ticker, fetched_at, payload)
+            VALUES (?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                fetched_at = excluded.fetched_at,
+                payload = excluded.payload
+            """,
+            (ticker.upper(), fetched_at, serialized),
+        )
+        conn.commit()
+
+
+def _load_yahoo_snapshot(ticker: str):
+    _init_cache_db()
+    db_path = _get_cache_db_path()
+    with sqlite3.connect(db_path, timeout=10) as conn:
+        row = conn.execute(
+            "SELECT fetched_at, payload FROM yahoo_snapshot WHERE ticker = ?",
+            (ticker.upper(),),
+        ).fetchone()
+
+    if not row:
+        return None, None
+
+    fetched_at_raw, payload_blob = row
+    try:
+        fetched_at = datetime.fromisoformat(fetched_at_raw)
+    except ValueError:
+        fetched_at = None
+
+    try:
+        payload = pickle.loads(payload_blob)
+    except Exception:
+        return fetched_at, None
+
+    return fetched_at, payload
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def fetch_yahoo_live_payload(ticker: str) -> dict:
+    stock = yf.Ticker(ticker)
+    payload = {
+        "info": run_with_retry(lambda: stock.info) or {},
+        "recommendations": run_with_retry(lambda: stock.recommendations),
+        "dividends": run_with_retry(lambda: stock.dividends),
+        "history": run_with_retry(lambda: stock.history(period="max", interval="1mo")),
+        "financials": run_with_retry(lambda: stock.financials),
+        "balance_sheet": run_with_retry(lambda: stock.balance_sheet),
+        "quarterly_financials": run_with_retry(lambda: stock.quarterly_financials),
+        "quarterly_balance_sheet": run_with_retry(lambda: stock.quarterly_balance_sheet),
+    }
+    return payload
+
+
+def get_yahoo_payload_with_fallback(ticker: str):
+    now_utc = datetime.now(timezone.utc)
+    max_age = timedelta(days=YAHOO_CACHE_MAX_AGE_DAYS)
+    cached_at, cached_payload = _load_yahoo_snapshot(ticker)
+
+    # Prefer cache to reduce Yahoo calls as much as possible.
+    if cached_at and cached_payload and (now_utc - cached_at) <= max_age:
+        return cached_payload, "fresh-cache", cached_at
+
+    try:
+        live_payload = fetch_yahoo_live_payload(ticker)
+        _save_yahoo_snapshot(ticker, live_payload)
+        return live_payload, "live", now_utc
+    except Exception:
+        if cached_payload is not None and cached_at is not None:
+            return cached_payload, "stale-cache", cached_at
+        raise
 
 
 @st.cache_data(ttl=43200, show_spinner=False)
@@ -351,8 +475,16 @@ if st.button('Wygeneruj raport'):
         st.warning("Please enter a ticker")
     else:
         try:
-            stock = yf.Ticker(ticker)
-            info = run_with_retry(lambda: stock.info)
+            payload, payload_source, payload_timestamp = get_yahoo_payload_with_fallback(ticker)
+
+            if payload_source == "fresh-cache":
+                st.info(f"Użyto danych z lokalnego cache (<= {YAHOO_CACHE_MAX_AGE_DAYS} dni), aby ograniczyć limity Yahoo.")
+            elif payload_source == "stale-cache":
+                st.warning("Yahoo chwilowo niedostępne lub limit zapytań przekroczony. Użyto ostatnich zapisanych danych.")
+            else:
+                st.caption("Pobrano świeże dane z Yahoo i zapisano je do lokalnego cache.")
+
+            info = payload.get("info", {})
             if not isinstance(info, dict):
                 info = {}
 
@@ -364,7 +496,7 @@ if st.button('Wygeneruj raport'):
                 currency_name = info.get('currency') or "N/A"
 
                 # Rekomendacje analityków
-                recommendations = run_with_retry(lambda: stock.recommendations)
+                recommendations = payload.get("recommendations")
                 name_ticker = f"{company_name} {ticker}"
                 summary = "Brak rekomendacji analityków do podsumowania."
 
@@ -411,9 +543,13 @@ if st.button('Wygeneruj raport'):
                 stream_markdown_text(summary)
 
                 # Dywidendy
-                dividends = run_with_retry(lambda: stock.dividends)
+                dividends = payload.get("dividends")
 
-                history_df = run_with_retry(lambda: stock.history(period="max", interval="1mo"))[["Open", "Close"]].reset_index()
+                history_payload = payload.get("history")
+                if history_payload is None or history_payload.empty:
+                    history_df = pd.DataFrame(columns=["Date", "Open", "Close"])
+                else:
+                    history_df = history_payload[["Open", "Close"]].reset_index()
                 history_monthly_close = history_df[["Date", "Close"]].copy()
 
                 if dividends is None or dividends.empty:
@@ -439,10 +575,26 @@ if st.button('Wygeneruj raport'):
 
 
                 # Finanse roczne i kwartalne
-                annual_financials = run_with_retry(lambda: stock.financials).T.sort_index(ascending=False)
-                annual_balance_sheet = run_with_retry(lambda: stock.balance_sheet).T.sort_index(ascending=False)
-                quarterly_financials = run_with_retry(lambda: stock.quarterly_financials).T.sort_index(ascending=False)
-                quarterly_balance_sheet = run_with_retry(lambda: stock.quarterly_balance_sheet).T.sort_index(ascending=False)
+                annual_financials_raw = payload.get("financials")
+                annual_balance_sheet_raw = payload.get("balance_sheet")
+                quarterly_financials_raw = payload.get("quarterly_financials")
+                quarterly_balance_sheet_raw = payload.get("quarterly_balance_sheet")
+
+                if any(
+                    item is None or item.empty
+                    for item in [
+                        annual_financials_raw,
+                        annual_balance_sheet_raw,
+                        quarterly_financials_raw,
+                        quarterly_balance_sheet_raw,
+                    ]
+                ):
+                    raise ValueError("Brak kompletnych danych finansowych Yahoo dla wskazanej spółki.")
+
+                annual_financials = annual_financials_raw.T.sort_index(ascending=False)
+                annual_balance_sheet = annual_balance_sheet_raw.T.sort_index(ascending=False)
+                quarterly_financials = quarterly_financials_raw.T.sort_index(ascending=False)
+                quarterly_balance_sheet = quarterly_balance_sheet_raw.T.sort_index(ascending=False)
 
                 latest_annual_financial_date = annual_financials.index[0]
                 latest_quarterly_financial_date = quarterly_financials.index[0]
